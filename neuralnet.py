@@ -6,8 +6,7 @@ Inspired by Grant Sanderson's excellent videos on neural networks.
 
 Classes:
     Functions:      Math for calculating activations and errors.
-    InputLayer:     A layer with only activations.
-    HiddenLayer:    A layer with activations, weights, and biases.
+    Layer:    A layer with activations, weights, and biases.
     NeuralNet:      A collection of layers.
 """
 
@@ -23,7 +22,7 @@ class Functions():
 
     Functions:
         sigmoid:    Sigmoid (logistic) activation function.
-        euclidean:  Euclidean distance error function.
+        diffSquares:  Difference of squared outputs error function.
     """
 
     @staticmethod
@@ -32,32 +31,24 @@ class Functions():
         return 1 / (1 + math.exp(-number))
 
     @staticmethod
-    def euclidean(a, b):
-        """Calculate the Euclidean distance between two vectors."""
-        ## TODO: That's not even close to what it is
+    def diffSquares(a, b):
+        """Calculate the difference between two lists."""
         return sum([x * x - y * y for x, y in zip(a, b)])
 
 
-class InputLayer(object):
-
-    """Layer with nothing but activations."""
-    def __init__(self, nodes):
-        self.activations = Matrix(nodes, 1)
-
-
-class HiddenLayer(InputLayer):
+class Layer(object):
     """Layer with activations, weights, and biases."""
 
     def __init__(self, nodes, prevNodes, transfer):
         """
-        Construct a HiddenLayer.
+        Construct a Layer.
 
         Parameters:
             nodes:      How many nodes this layer has.
             prevNodes:  How many nodes the previous layer has.
             transfer:   The activation function to use for this layer.
         """
-        super().__init__(nodes)
+        self.activations = Matrix(nodes, 1)
         self.biases = Matrix(nodes, 1)
         self.weights = Matrix(nodes, prevNodes)
         self.transfer = transfer
@@ -69,33 +60,26 @@ class HiddenLayer(InputLayer):
         Parameters:
             source: List of activations in the previous layer.
         """
-        self.activations = self.weights.multiply(
-            source).add(self.biases)
-        self.activations.forEach(lambda cell, row, col: self.activations.setCell(
-            row, col, self.transfer(cell)))
+        self.activations = (self.weights * source +
+                            self.biases).map(self.transfer)
 
 
 class NeuralNet(object):
     """Collection of layers forming a network."""
 
-    def __init__(self, input, hidden, output, transfer, error):
+    def __init__(self, layers, transfer, error):
         """
         Create new NeuralNet.
 
         Parameters:
-            input:      Number of nodes in the input layer.
-            hidden:     List containing numbers of nodes in each hidden layer.
-            output:     Number of nodes in output layer.
+            layers:     List containing numbers of nodes in each layer.
             transfer:   Activation function for this network.
             error:      Error function for this network.
         """
         self.transfer = transfer
         self.error = error
-        self.input = InputLayer(input)
-        self.hidden = [HiddenLayer(
-            hidden[i], hidden[i - 1] if i else input, self.transfer) for i in range(len(hidden))]
-        self.output = HiddenLayer(
-            output, hidden[len(hidden) - 1], self.transfer)
+        self.layers = [Layer(layers[i], layers[i - 1] if i else 0,
+                             self.transfer) for i in range(len(layers))]
 
     def predict(self, input):
         """
@@ -104,14 +88,13 @@ class NeuralNet(object):
         Parameters:
             input: Values to activate the input layer.
         """
-        self.input.activations.forEach(
-            lambda cell, row, col: self.input.activations.setCell(row, col, input[col]))
-        [self.hidden[i].activate(self.hidden[i - 1].activations if i else self.input.activations)
-         for i in range(len(self.hidden))]
-        self.output.activate(self.hidden[len(self.hidden) - 1].activations)
+        inputIterator = iter(input)
+        self.layers[0].activations.mapInPlace(lambda cell: next(inputIterator))
+        [self.layers[i].activate(self.layers[i - 1].activations)
+         for i in range(1, len(self.layers))]
         prediction = []
-        self.output.activations.forEach(
-            lambda cell, row, col: prediction.append(cell))
+        self.layers[len(self.layers) - 1
+                    ].activations.map(lambda cell: prediction.append(cell))
         return prediction
 
     def randomize(self, lower, upper):
@@ -122,32 +105,18 @@ class NeuralNet(object):
             lower:  Lower bound for random values.
             upper:  Upper bound for random values.
         """
-        for h in self.hidden:
-            h.weights.forEach(lambda w, r, c: h.weights.setCell(
-                r, c, random.uniform(lower, upper)))
-            h.biases.forEach(lambda w, r, c: h.biases.setCell(
-                r, c, random.uniform(lower, upper)))
-        self.output.weights.forEach(
-            lambda w, r, c: self.output.weights.setCell(r, c, random.uniform(lower, upper)))
-        self.output.biases.forEach(
-            lambda w, r, c: self.output.biases.setCell(r, c, random.uniform(lower, upper)))
+        for i in range(1, len(self.layers)):
+            self.layers[i].weights.mapInPlace(
+                lambda cell: random.uniform(lower, upper))
+            self.layers[i].biases.mapInPlace(
+                lambda cell: random.uniform(lower, upper))
 
     def save(self):
         """Return a JSON string representing this network."""
         dumpable = {
-            "layers": {
-                "input": self.input.activations.cells(),
-                "hidden": [h.activations.cells() for h in self.hidden],
-                "output": self.output.activations.cells()
-            },
-            "weights": {
-                "hidden": [h.weights.data for h in self.hidden],
-                "output": self.output.weights.data
-            },
-            "biases": {
-                "hidden": [h.biases.data for h in self.hidden],
-                "output": self.output.biases.data
-            },
+            "layers": [len(l.activations.rows) for l in self.layers],
+            "weights": [l.weights.rows for l in self.layers],
+            "biases": [l.biases.rows for l in self.layers],
             "transfer": self.transfer.__name__,
             "error": self.error.__name__
         }
@@ -157,18 +126,18 @@ class NeuralNet(object):
     def load(str):
         """Convert a JSON-encoded network into a new NeuralNet object."""
         l = json.loads(str)
-        newnn = NeuralNet(l["layers"]["input"], l["layers"]["hidden"], l["layers"]["output"], getattr(
+        newnn = NeuralNet(l["layers"], getattr(
             Functions, l["transfer"]), getattr(Functions, l["error"]))
-        for h, hw, hb in zip(newnn.hidden, l["weights"]["hidden"], l["biases"]["hidden"]):
-            h.weights.data = hw
-            h.biases.data = hb
-        newnn.output.weights.data = l["weights"]["output"]
-        newnn.output.biases.data = l["biases"]["output"]
+        for la, lw, lb in zip(newnn.layers, l["weights"], l["biases"]):
+            la.weights = Matrix(lw)
+            la.biases = Matrix(lb)
         return newnn
 
     def train(self, dataIn, expectedOut, rounds):
         """
         Learn from labelled data.
+
+        Currently not working.
         """
         mappedData = zip(dataIn, expectedOut)
         cost = 0
@@ -176,4 +145,4 @@ class NeuralNet(object):
             testPrediction = self.predict(d)
             cost += self.error(testPrediction, e)
         cost /= len(dataIn)
-            # TODO: Gradient descent stuffs
+        # TODO: Gradient descent stuffs
