@@ -13,7 +13,7 @@ def main():
     tests += 1
     print("Random garbage test:")
     print("Creating and initializing a new net with random weights and biases")
-    mynn = nn.NeuralNet(4, [3], 2, nn.Functions.sigmoid, nn.Functions.euclidean)
+    mynn = nn.NeuralNet([4, 3, 2], nn.Functions.sigmoid, nn.Functions.diffSquares)
     mynn.randomize(-10, 10)
     print("Creating two predictions with different input data to see if the results are different")
     prediction1 = mynn.predict([1, 1, 1, 1])
@@ -42,7 +42,9 @@ def main():
     tests += 1
     print("Save/load test:")
     print("Does a net that has been restored from a JSON save behave the same as one that hasn't?")
-    nncopy = nn.NeuralNet.load(mynn.save())
+    savestr = mynn.save()
+    #print(savestr)
+    nncopy = nn.NeuralNet.load(savestr)
     prediction5 = nncopy.predict([4, 4, 4, 4])
     print(prediction4, "<- Original net")
     print(prediction5, "<- Saved and restored net")
