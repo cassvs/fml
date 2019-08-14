@@ -21,25 +21,70 @@ class Functions():
     Activation and error functions.
 
     Functions:
-        sigmoid:    Sigmoid (logistic) activation function.
-        diffSquares:  Difference of squared outputs error function.
+        sigmoid:                Sigmoid (logistic) activation function.
+        sigmoidDerivative:      Partial derivative of sigmoid function.
+        relu:                   Rectified linear unit (ReLU) function.
+        reluDerivative:         Partial derivative of ReLU function.
+        identity:               The identity function.
+        identityDerivative:     1.
+        euclidean:              Euclidean distance error function.
+        euclideanDerivative:    Partial derivative of Euclidean function.
     """
 
     @staticmethod
     def sigmoid(number):
         """Calculate the sigmoid (aka logistic) activation function of an input."""
-        return 1 / (1 + math.exp(-number))
+        # Don't use this.
+        # Backpropagating with this transfer function causes the weights and biases
+        # in each successive layer to become exponentially larger, leading to a
+        # floating point overflow.
+        return 1 / (1 + math.e ** (-(number)))
 
     @staticmethod
-    def diffSquares(a, b):
-        """Calculate the difference between two lists."""
-        return sum([x * x - y * y for x, y in zip(a, b)])
+    def sigmoidDerivative(number):
+        """Calculate the partial derivative of the sigmoid activation function."""
+        return number * (1 - number)
+
+    @staticmethod
+    def relu(number):
+        """Return input if input is greater than zero, else return zero."""
+        # Don't use this.
+        # Backpropagating with this transfer function causes random neurons to get
+        # stuck at zero, with no way of recovering.
+        return number if number > 0 else 0
+
+    @staticmethod
+    def reluDerivative(number):
+        """Return 1 if input is greater than zero, else return zero."""
+        return 1 if number > 0 else 0
+
+    @staticmethod
+    def identity(number):
+        """Return input."""
+        # This is the only transfer function that even comes close to working.
+        # It's still terrible though. Don't use it.
+        return number
+
+    @staticmethod
+    def identityDerivative(number):
+        """Return 1."""
+        return 1
+
+    @staticmethod
+    def euclidean(x, y):
+        """Calculate the error between two values."""
+        return 0.5 * math.pow(x - y, 2)
+
+    @staticmethod
+    def euclideanDerivative(x, y):
+        """Calculate the partial derivative of the Euclidean error function"""
+        return x - y
 
 
 class Layer(object):
     """Layer with activations, weights, and biases."""
 
-    def __init__(self, nodes, prevNodes, transfer):
+    def __init__(self, nodes, prevNodes, transfer, dtransfer):
         """
         Construct a Layer.
 
@@ -52,6 +97,7 @@ class Layer(object):
         self.biases = Matrix(nodes, 1)
         self.weights = Matrix(nodes, prevNodes)
         self.transfer = transfer
+        self.dtransfer = dtransfer
 
     def activate(self, source):
         """
@@ -62,6 +108,31 @@ class Layer(object):
         """
         self.activations = (self.weights * source +
                             self.biases).map(self.transfer)
+
+    def backprop(self, dactivations, prevActivations, rate):
+        """
+        Tweak the weights and biases of this layer.
+
+        Parameters:
+            dactivations:       Matrix containing the partial derivatives of the activations of this layer.
+            prevActivations:    Matrix containing the activations of the previous layer.
+            rate:               Learning rate.
+        """
+        # This is the source of all the bugs, I'm pretty sure.
+        dtransfer = (self.weights * prevActivations +
+                     self.biases).map(lambda cell: self.dtransfer(cell))
+        dbiases = Matrix(*self.biases.dimensions)
+        for row in range(len(dbiases.rows)):
+            dbiases[(row, 0)] = dtransfer[(row, 0)] * dactivations[(row, 0)]
+        dweights = prevActivations * Matrix(dbiases.cols)
+        dprevActivations = Matrix(self.weights.cols) * dbiases
+        for row in range(len(self.biases.rows)):
+            self.biases[(row, 0)] -= rate * dbiases[(row, 0)]
+        dweights = Matrix(dweights.cols)
+        for row in range(len(self.weights.rows)):
+            for col in range(len(self.weights.cols)):
+                self.weights[(row, col)] -= rate * dweights[(row, col)]
+        return dprevActivations
 
 
 class NeuralNet(object):
@@ -76,10 +147,28 @@ class NeuralNet(object):
             transfer:   Activation function for this network.
             error:      Error function for this network.
         """
-        self.transfer = transfer
-        self.error = error
+        if error == "euclidean":
+            self.error = Functions.euclidean
+            self.derror = Functions.euclideanDerivative
+        else:
+            self.error = Functions.euclidean
+            self.derror = Functions.euclideanDerivative
+
+        if transfer == "sigmoid":
+            self.transfer = Functions.sigmoid
+            self.dtransfer = Functions.sigmoidDerivative
+        elif transfer == "relu":
+            self.transfer = Functions.relu
+            self.dtransfer = Functions.reluDerivative
+        elif transfer == "identity":
+            self.transfer = Functions.identity
+            self.dtransfer = Functions.identityDerivative
+        else:
+            self.transfer = Functions.sigmoid
+            self.dtransfer = Functions.sigmoidDerivative
+
         self.layers = [Layer(layers[i], layers[i - 1] if i else 0,
-                             self.transfer) for i in range(len(layers))]
+                             self.transfer, self.dtransfer) for i in range(len(layers))]
 
     def predict(self, input):
         """
@@ -92,10 +181,7 @@ class NeuralNet(object):
         self.layers[0].activations.mapInPlace(lambda cell: next(inputIterator))
         [self.layers[i].activate(self.layers[i - 1].activations)
          for i in range(1, len(self.layers))]
-        prediction = []
-        self.layers[len(self.layers) - 1
-                    ].activations.map(lambda cell: prediction.append(cell))
-        return prediction
+        return self.layers[len(self.layers) - 1].activations
 
     def randomize(self, lower, upper):
         """
@@ -133,16 +219,45 @@ class NeuralNet(object):
             la.biases = Matrix(lb)
         return newnn
 
-    def train(self, dataIn, expectedOut, rounds):
+    def train(self, dataIn, expectedOut, rounds, rate):
         """
         Learn from labelled data.
 
-        Currently not working.
+        Parameters:
+            dataIn:         List of lists of input values.
+            expectedOut:    Labels for input data.
+            rounds:         Number of times to run through the dataset.
+            rate:           Learning rate.
+
+        Currently sort of working.
         """
-        mappedData = zip(dataIn, expectedOut)
-        cost = 0
-        for d, e in random.shuffle(mappedData):
-            testPrediction = self.predict(d)
-            cost += self.error(testPrediction, e)
-        cost /= len(dataIn)
-        # TODO: Gradient descent stuffs
+        mappedData = list(zip(dataIn, expectedOut))
+        for r in range(rounds):
+            random.shuffle(mappedData)
+            for d, e in mappedData:
+                self.backpropagate(d, e, rate)
+
+    def backpropagate(self, dataIn, expectedOut, rate):
+        """
+        Tweak the weights and biases of each layer.
+
+        Parameters:
+            dataIn:         Flat list containing one training example's input data.
+            expectedOut:    Flat list containing the expected output for the training example.
+            rate:           Learning rate.
+        """
+        actualOutput = self.predict(dataIn)
+        error = Matrix(*actualOutput.dimensions)
+        derror = Matrix(*actualOutput.dimensions)
+
+        for row in range(len(actualOutput.rows)):
+            error[(row, 0)] = self.error(
+                actualOutput[(row, 0)], expectedOut[row])
+            derror[(row, 0)] = self.derror(
+                actualOutput[(row, 0)], expectedOut[row])
+
+        # Pass the activation derivative generated by the previous backprop step to the next backprop step.
+        lastderror = derror
+        for l in range(len(self.layers) - 1, 0, -1):
+            lastderror = self.layers[l].backprop(
+                lastderror, self.layers[l - 1].activations, rate)

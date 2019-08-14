@@ -16,13 +16,11 @@ I have no experience with machine learning. This code is based entirely on knowl
 - A neural net class that supports an arbitrary number of hidden layers.
 - The ability to initialize a neural net with random weights and biases.
 - Saveable/loadable models! Dump your neural net to a JSON string to save it for later.
+- **Training!** Neural nets can now learn from labelled data! ...Sort of. It doesn't work if you're using a sigmoid transfer function, because the backpropagation algorithm does weird stuff and floating point overflow errors happen. It also doesn't work if you use a ReLU, because a lot of the neurons get stuck at 0 and can't learn anymore. So... yeah. Only the identity function works. And it doesn't work well.
 
-### Missing Features:
-- **No training yet.** I haven't implemented back-propagation and all that tasty math yet. So... For now, enjoy watching your neural nets produce meaningless garbage, I guess...
+### Problems:
 - **Not packaged properly.** You're gonna have to play around with Python's `sys.path` in order to import this. I haven't written installer scripts or setup.py files or whatever yet.
+- **Buggy AF.** This library works, but only barely.
 
-### Performance:
-"But," I hear you ask, "How does `fml` compare to other ML frameworks?"
-
-`¯\_(ツ)_/¯`
-I dunno. Sucks, prob'ly. Nothing works, so there's not really any comparison to be made. I don't know how to use hardware acceleration or CUDA or anything, and it's written in Python, so I don't exactly expect great things.
+### Contributing:
+**Pull requests welcome!** If you have an idea that might improve this dumpster fire, if you have some real knowledge of machine learning and my garbage code makes you physically ill, or if you just want a piece of the nightmare, please submit a PR. Seriously, any changes or suggestions at all are welcome.
