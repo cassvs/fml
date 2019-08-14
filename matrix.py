@@ -61,9 +61,7 @@ class Matrix(object):
 
         Equivalent to reflecting the matrix about its diagonal.
         """
-        return list(zip(*self._data))
-        # TIL that this ^ is called 'iterable unpacking'.
-        # I had to search for 'magic star python' to find this out.
+        return [list(z) for z in zip(*self._data)]
 
     @property
     def dimensions(self):
